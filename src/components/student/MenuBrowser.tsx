@@ -6,7 +6,6 @@ import {
   Clock, 
   Leaf, 
   Flame,
-  Plus,
   Heart,
   ShoppingCart
 } from 'lucide-react';
@@ -20,7 +19,8 @@ export const MenuBrowser: React.FC = () => {
     searchTerm, 
     setSearchTerm,
     selectedCategory,
-    setSelectedCategory 
+    setSelectedCategory,
+    cartQuantities // <-- Use context for persistent quantities
   } = useApp();
 
   const [priceRange, setPriceRange] = useState({ min: 0, max: 500 });
@@ -56,20 +56,16 @@ export const MenuBrowser: React.FC = () => {
     );
   };
 
-  const renderSpiceLevel = (level: number) => {
-    return (
-      <div className="flex items-center space-x-1">
-        {[...Array(5)].map((_, i) => (
-          <Flame
-            key={i}
-            className={`w-3 h-3 ${
-              i < level ? 'text-red-500' : 'text-gray-300'
-            }`}
-          />
-        ))}
-      </div>
-    );
-  };
+  const renderSpiceLevel = (level: number) => (
+    <div className="flex items-center space-x-1">
+      {[...Array(5)].map((_, i) => (
+        <Flame
+          key={i}
+          className={`w-3 h-3 ${i < level ? 'text-red-500' : 'text-gray-300'}`}
+        />
+      ))}
+    </div>
+  );
 
   return (
     <div className="space-y-6 pb-24" >
@@ -247,15 +243,44 @@ export const MenuBrowser: React.FC = () => {
                 </div>
               )}
 
-              {/* Push button to bottom */}
+              {/* Add to Cart / Counter */}
               <div className="mt-auto">
-                <button
-                  onClick={() => addToCart(item)}
-                  className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center space-x-2"
-                >
-                  <ShoppingCart className="w-4 h-4" />
-                  <span>Add to Cart</span>
-                </button>
+                {cartQuantities[item.id] && cartQuantities[item.id] > 0 ? (
+                  <div className="flex items-center justify-center gap-2 bg-gray-100 rounded-full px-2 py-1 w-fit mx-auto">
+                    <button
+                      aria-label="Decrease quantity"
+                      onClick={() => {
+                        const newQty = cartQuantities[item.id] - 1;
+                        addToCart({ ...item, quantity: newQty });
+                      }}
+                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-300 text-blue-600 hover:bg-blue-50 transition"
+                      disabled={cartQuantities[item.id] === 0}
+                    >
+                      <span className="text-xl font-bold">−</span>
+                    </button>
+                    <span className="min-w-[2rem] text-center text-lg font-semibold text-gray-900">
+                      {cartQuantities[item.id]}
+                    </span>
+                    <button
+                      aria-label="Increase quantity"
+                      onClick={() => {
+                        const newQty = cartQuantities[item.id] + 1;
+                        addToCart({ ...item, quantity: newQty });
+                      }}
+                      className="w-8 h-8 flex items-center justify-center rounded-full bg-white border border-gray-300 text-blue-600 hover:bg-blue-50 transition"
+                    >
+                      <span className="text-xl font-bold">+</span>
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    onClick={() => addToCart({ ...item, quantity: 1 })}
+                    className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 transition-colors flex items-center justify-center space-x-2"
+                  >
+                    <ShoppingCart className="w-4 h-4" />
+                    <span>Add to Cart</span>
+                  </button>
+                )}
               </div>
             </div>
           </div>

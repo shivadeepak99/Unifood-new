@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { 
-  ShoppingCart, 
-  Plus, 
-  Minus, 
-  Trash2, 
+import {
+  ShoppingCart,
+  Plus,
+  Minus,
+  Trash2,
   Clock,
   CreditCard,
   CheckCircle,
@@ -14,11 +14,11 @@ import { useAuth } from '../../contexts/AuthContext';
 
 export const Cart: React.FC = () => {
   const { user } = useAuth();
-  const { 
-    cartItems, 
-    updateCartQuantity, 
-    removeFromCart, 
-    clearCart, 
+  const {
+    cartItems,
+    updateCartQuantity,
+    removeFromCart,
+    clearCart,
     cartTotal,
     timeSlots,
     createOrder
@@ -29,6 +29,7 @@ export const Cart: React.FC = () => {
   const [specialInstructions, setSpecialInstructions] = useState('');
   const [showSuccess, setShowSuccess] = useState(false);
   const [orderToken, setOrderToken] = useState('');
+  const [paymentType, setPaymentType] = useState<'prepaid'>('prepaid'); // Only prepayment
 
   const handleCheckout = async () => {
     if (!selectedTimeSlot) return;
@@ -154,7 +155,7 @@ export const Cart: React.FC = () => {
           <div className="lg:col-span-1">
             <div className="bg-white rounded-lg shadow-sm border p-6 sticky top-4">
               <h3 className="text-lg font-semibold text-gray-900 mb-4">Order Summary</h3>
-              
+
               <div className="space-y-3 mb-4">
                 <div className="flex justify-between">
                   <span className="text-gray-600">Subtotal</span>
@@ -182,7 +183,7 @@ export const Cart: React.FC = () => {
                   <CreditCard className="w-5 h-5" />
                   <span>Proceed to Checkout</span>
                 </button>
-                
+
                 <button
                   onClick={clearCart}
                   className="w-full border border-gray-300 text-gray-700 py-3 px-4 rounded-lg hover:bg-gray-50 transition-colors"
@@ -232,6 +233,25 @@ export const Cart: React.FC = () => {
                         </div>
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                {/* Payment Type Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-3">
+                    Payment Type
+                  </label>
+                  <div className="space-y-2">
+                    <label className="flex items-center space-x-3">
+                      <input
+                        type="radio"
+                        value="prepaid"
+                        checked={paymentType === 'prepaid'}
+                        onChange={() => setPaymentType('prepaid')}
+                        className="focus:ring-blue-500 h-5 w-5 text-blue-600 border-gray-300"
+                      />
+                      <span className="text-gray-900">Prepaid (Online Payment)</span>
+                    </label>
                   </div>
                 </div>
 

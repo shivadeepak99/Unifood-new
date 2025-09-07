@@ -1,27 +1,36 @@
 import React, { useState } from 'react';
 import { 
-  Utensils, 
   ShoppingCart, 
   Bell, 
   User, 
-  LogOut, 
-  Settings,
-  GraduationCap,
-  Menu,
-  X
+  Settings as SettingsIcon,
+  LogOut,
+  ChefHat
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 import { useApp } from '../../contexts/AppContext';
+import { CartDropdown } from './CartDropdown';
+import { NotificationDropdown } from './NotificationDropdown';
+// import { Cart } from '../../student/Cart';
 
+interface HeaderProps {
+  onNavigate: (page: string) => void;
+  currentPage: string;
+}
 
-export const Header: React.FC = () => {
+export const Header: React.FC<HeaderProps> = ({ onNavigate, currentPage }) => {
   const { user, logout } = useAuth();
   const { cartItems, notifications } = useApp();
+  const [showCart, setShowCart] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
-  const [showMobileMenu, setShowMobileMenu] = useState(false);
 
-  const cartItemCount = cartItems.reduce((total, item) => total + item.quantity, 0);
-  const unreadNotifications = notifications.filter(n => n.userId === user?.id && !n.read).length;
+  const cartItemCount = cartItems.reduce((sum, item) => sum + item.quantity, 0);
+  const unreadNotifications = notifications.filter(n => !n.read).length;
+
+  const handleLogoClick = () => {
+    onNavigate('profile');
+  };
 
   const handleLogout = () => {
     logout();
@@ -29,145 +38,164 @@ export const Header: React.FC = () => {
   };
 
   return (
-    <header className="bg-white shadow-lg border-b">
+    <header className="bg-white shadow-sm border-b sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
-          {/* Logo and Brand */}
-          <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-              <Utensils className="w-6 h-6 text-white" />
-            </div>
-            <div className="hidden sm:block">
+        <div className="flex justify-between items-center h-16">
+          {/* Logo */}
+          <button
+            onClick={handleLogoClick}
+            className="flex items-center space-x-3 hover:opacity-80 transition-opacity"
+          >
+            <ChefHat className="w-8 h-8 text-blue-600" />
+            <div className="text-left">
               <h1 className="text-xl font-bold text-gray-900">UniFood</h1>
-              <div className="flex items-center space-x-1 text-xs text-gray-600">
-                <GraduationCap className="w-3 h-3" />
-                <span>IIIT Kottayam</span>
-              </div>
+              <p className="text-xs text-gray-600">IIIT Kottayam</p>
             </div>
-          </div>
+          </button>
 
-          {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-6">
+          {/* Navigation
+          <nav className="hidden md:flex space-x-8">
             {user?.role === 'student' && (
-              <div className="flex items-center space-x-4">
-                {/* Cart */}
-                <button className="relative p-2 text-gray-600 hover:text-blue-600 transition-colors">
-                  <ShoppingCart className="w-6 h-6" />
-                  {cartItemCount > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {cartItemCount}
-                    </span>
-                  )}
+              <>
+                <button
+                  onClick={() => onNavigate('menu')}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    currentPage === 'menu'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+                >
+                  Menu
                 </button>
-
-                {/* Notifications */}
-                
-                <button className="relative p-2 text-gray-600 hover:text-blue-600 transition-colors">
-                  <Bell className="w-6 h-6" />
-                  {unreadNotifications > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                      {unreadNotifications}
-                    </span>
-                  )}
+                <button
+                  onClick={() => onNavigate('orders')}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    currentPage === 'orders'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+                >
+                  My Orders
                 </button>
-              </div>
+              </>
             )}
+            {user?.role === 'manager' && (
+              <>
+                <button
+                  onClick={() => onNavigate('dashboard')}
+                  className={`px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                    currentPage === 'dashboard'
+                      ? 'bg-blue-100 text-blue-700'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100'
+                  }`}
+                >
+                  Dashboard
+                </button>
+              </>
+            )}
+          </nav> */}
+
+          {/* Right Side Actions */}
+          <div className="flex items-center space-x-4">
+            {user?.role === 'student' && (
+              <>
+                {/* Cart */}
+                <div className="relative">
+                  <button
+                    onClick={() => onNavigate('cart')}
+                    className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <ShoppingCart className="w-6 h-6" />
+                    {cartItemCount > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-blue-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                        {cartItemCount}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* {showCart && (
+                    <CartDropdown onClose={() => setShowCart(false)} onNavigate={onNavigate} />
+                  )} */}
+                </div>
+              </>
+            )}
+
+            {/* Notifications */}
+            <div className="relative">
+              <button
+                onClick={() => setShowNotifications(!showNotifications)}
+                className="relative p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Bell className="w-6 h-6" />
+                {unreadNotifications > 0 && (
+                  <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                    {unreadNotifications}
+                  </span>
+                )}
+              </button>
+              {showNotifications && (
+                <NotificationDropdown onClose={() => setShowNotifications(false)} />
+              )}
+            </div>
 
             {/* User Menu */}
             <div className="relative">
               <button
                 onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center space-x-2 p-2 rounded-lg hover:bg-gray-100 transition-colors"
+                className="flex items-center space-x-2 p-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
               >
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center">
-                  <User className="w-5 h-5 text-blue-600" />
-                </div>
-                <div className="text-left">
-                  <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-                  <p className="text-xs text-gray-500 capitalize">{user?.role}</p>
-                </div>
+                <User className="w-6 h-6" />
+                <span className="hidden sm:block text-sm font-medium">{user?.name}</span>
               </button>
 
-              {/* Dropdown Menu */}
               {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border z-50">
-                  <div className="py-1">
-                    <div className="px-4 py-2 border-b">
-                      <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-                      <p className="text-xs text-gray-500">{user?.email}</p>
-                    </div>
-                    <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                      <Settings className="w-4 h-4 mr-3" />
-                      Settings
-                    </button>
-                    <button
-                      onClick={handleLogout}
-                      className="w-full flex items-center px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-                    >
-                      <LogOut className="w-4 h-4 mr-3" />
-                      Logout
-                    </button>
-                  </div>
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border py-2 z-50">
+                  <button
+                    onClick={() => {
+                      onNavigate('profile');
+                      setShowUserMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  >
+                    <User className="w-4 h-4" />
+                    <span>Profile</span>
+                  </button>
+                  <button
+                    onClick={() => {
+                      onNavigate('settings');
+                      setShowUserMenu(false);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center space-x-2"
+                  >
+                    <SettingsIcon className="w-4 h-4" />
+                    <span>Settings</span>
+                  </button>
+                  <hr className="my-2" />
+                  <button
+                    onClick={handleLogout}
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 flex items-center space-x-2"
+                  >
+                    <LogOut className="w-4 h-4" />
+                    <span>Logout</span>
+                  </button>
                 </div>
               )}
             </div>
           </div>
-
-          {/* Mobile Menu Button */}
-          <button
-            onClick={() => setShowMobileMenu(!showMobileMenu)}
-            className="md:hidden p-2 rounded-lg text-gray-600 hover:text-blue-600 hover:bg-gray-100"
-          >
-            {showMobileMenu ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
-          </button>
         </div>
-
-        {/* Mobile Menu */}
-        {showMobileMenu && (
-          <div className="md:hidden border-t bg-white">
-            <div className="py-4 space-y-2">
-              {user?.role === 'student' && (
-                <div className="flex justify-center space-x-6 mb-4">
-                  <button className="relative p-3 text-gray-600 hover:text-blue-600 transition-colors">
-                    <ShoppingCart className="w-6 h-6" />
-                    {cartItemCount > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {cartItemCount}
-                      </span>
-                    )}
-                  </button>
-                  <button className="relative p-3 text-gray-600 hover:text-blue-600 transition-colors">
-                    <Bell className="w-6 h-6" />
-                    {unreadNotifications > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
-                        {unreadNotifications}
-                      </span>
-                    )}
-                  </button>
-                </div>
-              )}
-
-              <div className="px-4 py-2 border-t">
-                <p className="text-sm font-medium text-gray-900">{user?.name}</p>
-                <p className="text-xs text-gray-500">{user?.email}</p>
-              </div>
-
-              <button className="w-full flex items-center px-4 py-2 text-sm text-gray-700 hover:bg-gray-50">
-                <Settings className="w-4 h-4 mr-3" />
-                Settings
-              </button>
-
-              <button
-                onClick={handleLogout}
-                className="w-full flex items-center px-4 py-2 text-sm text-red-700 hover:bg-red-50"
-              >
-                <LogOut className="w-4 h-4 mr-3" />
-                Logout
-              </button>
-            </div>
-          </div>
-        )}
       </div>
+
+      {/* Backdrop for dropdowns */}
+      {(showCart || showNotifications || showUserMenu) && (
+        <div 
+          className="fixed inset-0 z-40" 
+          onClick={() => {
+            setShowCart(false);
+            setShowNotifications(false);
+            setShowUserMenu(false);
+          }}
+        />
+      )}
     </header>
   );
 };

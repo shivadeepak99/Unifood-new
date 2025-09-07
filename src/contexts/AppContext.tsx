@@ -6,7 +6,8 @@ interface AppContextType {
   // Menu & Cart
   menuItems: MenuItem[];
   cartItems: CartItem[];
-  addToCart: (item: MenuItem, quantity?: number) => void;
+  cartQuantities: Record<string, number>;
+  addToCart: (item: MenuItem) => void;
   removeFromCart: (itemId: string) => void;
   updateCartQuantity: (itemId: string, quantity: number) => void;
   clearCart: () => void;
@@ -151,13 +152,14 @@ const SAMPLE_MENU_ITEMS: MenuItem[] = [
 export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user } = useAuth();
   const [menuItems, setMenuItems] = useState<MenuItem[]>(SAMPLE_MENU_ITEMS);
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [cartItems, setCartItems] = useState<MenuItem[]>([]);
+  const [cartQuantities, setCartQuantities] = useState<Record<string, number>>({});
   const [orders, setOrders] = useState<Order[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [notifications, setNotifications] = useState<Notification[]>([]);
-  const [searchTerm, setSearchTerm] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState('');
+  const [searchTerm, setSearchTerm] = useState<string>('');
+  const [selectedCategory, setSelectedCategory] = useState<string>('');
 
   // Load data from localStorage on mount
   useEffect(() => {
@@ -210,42 +212,54 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setTimeSlots(slots);
   };
 
-  const addToCart = (item: MenuItem, quantity = 1) => {
+  const addToCart = (item: MenuItem) => {
     setCartItems(prev => {
-      const existing = prev.find(cartItem => cartItem.id === item.id);
-      if (existing) {
-        return prev.map(cartItem =>
-          cartItem.id === item.id
-            ? { ...cartItem, quantity: cartItem.quantity + quantity }
-            : cartItem
-        );
+      const existingItemIndex = prev.findIndex(i => i.id === item.id);
+      if (existingItemIndex !== -1) {
+        const newCartItems = [...prev];
+        newCartItems[existingItemIndex] = { ...newCartItems[existingItemIndex], quantity: (newCartItems[existingItemIndex].quantity || 0) + 1 };
+        return newCartItems;
+      } else {
+        return [...prev, { ...item, quantity: 1 }];
       }
-      return [...prev, { ...item, quantity }];
     });
+
+    setCartQuantities(prev => ({
+      ...prev,
+      [item.id]: (prev[item.id] || 0) + 1,
+    }));
   };
 
   const removeFromCart = (itemId: string) => {
     setCartItems(prev => prev.filter(item => item.id !== itemId));
+    setCartQuantities(prev => {
+      const newQuantities = { ...prev };
+      delete newQuantities[itemId];
+      return newQuantities;
+    });
   };
 
   const updateCartQuantity = (itemId: string, quantity: number) => {
-    if (quantity <= 0) {
-      removeFromCart(itemId);
-      return;
-    }
-    
-    setCartItems(prev =>
-      prev.map(item =>
-        item.id === itemId ? { ...item, quantity } : item
-      )
-    );
+    setCartItems(prev => {
+      return prev.map(item => {
+        if (item.id === itemId) {
+          return { ...item, quantity: quantity };
+        }
+        return item;
+      });
+    });
+    setCartQuantities(prev => ({
+      ...prev,
+      [itemId]: quantity,
+    }));
   };
 
   const clearCart = () => {
     setCartItems([]);
+    setCartQuantities({});
   };
 
-  const cartTotal = cartItems.reduce((total, item) => total + (item.price * item.quantity), 0);
+  const cartTotal = cartItems.reduce((total, item) => total + (item.price * (item.quantity || 0)), 0);
 
   const generateDailyToken = (): string => {
     const today = new Date().toDateString();
@@ -391,48 +405,51 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   };
 
   return (
-    <AppContext.Provider value={{
-      // Menu & Cart
-      menuItems,
-      cartItems,
-      addToCart,
-      removeFromCart,
-      updateCartQuantity,
-      clearCart,
-      cartTotal,
+    <AppContext.Provider
+      value={{
+        // Menu & Cart
+        menuItems,
+        cartItems,
+        cartQuantities,
+        addToCart,
+        removeFromCart,
+        updateCartQuantity,
+        clearCart,
+        cartTotal,
 
-      // Orders
-      orders,
-      createOrder,
-      updateOrderStatus,
+        // Orders
+        orders,
+        createOrder,
+        updateOrderStatus,
 
-      // Reviews
-      reviews,
-      addReview,
+        // Reviews
+        reviews,
+        addReview,
 
-      // Time Slots
-      timeSlots,
-      generateTimeSlots,
+        // Time Slots
+        timeSlots,
+        generateTimeSlots,
 
-      // Notifications
-      notifications,
-      addNotification,
-      markNotificationRead,
+        // Notifications
+        notifications,
+        addNotification,
+        markNotificationRead,
 
-      // Manager functions
-      addMenuItem,
-      updateMenuItem,
-      deleteMenuItem,
+        // Manager functions
+        addMenuItem,
+        updateMenuItem,
+        deleteMenuItem,
 
-      // Search & Filter
-      searchTerm,
-      setSearchTerm,
-      selectedCategory,
-      setSelectedCategory,
+        // Search & Filter
+        searchTerm,
+        setSearchTerm,
+        selectedCategory,
+        setSelectedCategory,
 
-      // Utilities
-      generateDailyToken
-    }}>
+        // Utilities
+        generateDailyToken
+      }}
+    >
       {children}
     </AppContext.Provider>
   );
