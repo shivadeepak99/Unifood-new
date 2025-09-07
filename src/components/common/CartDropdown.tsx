@@ -26,10 +26,10 @@ export const CartDropdown: React.FC<CartDropdownProps> = ({ isOpen, onClose, onV
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-40" onClick={onClose} />
+      <div className="fixed inset-0 z-[45]" onClick={onClose} />
       
       {/* Dropdown */}
-      <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border z-50 max-h-96 overflow-hidden">
+      <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg shadow-xl border z-[55] max-h-96 overflow-hidden">
         <div className="flex items-center justify-between p-4 border-b">
           <h3 className="text-lg font-semibold text-gray-900">Shopping Cart</h3>
           <button

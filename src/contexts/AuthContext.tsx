@@ -1,4 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import { sendOTPEmail, verifyOTP as verifyOTPLib, generateOTP } from '../lib/email';
+import toast from 'react-hot-toast';
 import { User } from '../types';
 
 interface AuthContextType {
@@ -27,123 +30,250 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('unifood_user');
-    if (storedUser) {
-      setUser(JSON.parse(storedUser));
+    // Check for existing Supabase session
+    const getSession = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user) {
+        // Fetch user profile from our users table
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
+        
+        if (profile) {
+          const userData: User = {
+            id: profile.id,
+            name: profile.name,
+            email: profile.email,
+            studentId: profile.student_id,
+            role: profile.role,
+            isVerified: profile.is_verified,
+            loyaltyPoints: profile.loyalty_points,
+            createdAt: new Date(profile.created_at)
+          };
+          setUser(userData);
+        }
+      }
+      setIsLoading(false);
+    };
+
+    getSession();
+
+    // Listen for auth changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      if (event === 'SIGNED_OUT' || !session) {
+        setUser(null);
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
     }
-    setIsLoading(false);
   }, []);
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
-    // Check for manager credentials
-    if (email === 'manager@iiitkottayam.ac.in' && password === 'manager123') {
-      const managerUser: User = {
-        id: 'manager_1',
-        name: 'Canteen Manager',
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
         email,
-        role: 'manager',
-        isVerified: true,
-        createdAt: new Date()
-      };
-      setUser(managerUser);
-      localStorage.setItem('unifood_user', JSON.stringify(managerUser));
-      setIsLoading(false);
-      return true;
-    }
+        password
+      });
 
-    // Check for student credentials (mock validation)
-    if (email.endsWith('@iiitkottayam.ac.in') && password) {
-      const students = JSON.parse(localStorage.getItem('unifood_students') || '[]');
-      const student = students.find((s: User) => s.email === email && s.isVerified);
-      
-      if (student) {
-        setUser(student);
-        localStorage.setItem('unifood_user', JSON.stringify(student));
+      if (error) {
+        toast.error(error.message);
         setIsLoading(false);
-        return true;
+        return false;
       }
+
+      if (data.user) {
+        // Fetch user profile
+        const { data: profile } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', data.user.id)
+          .single();
+
+        if (profile) {
+          const userData: User = {
+            id: profile.id,
+            name: profile.name,
+            email: profile.email,
+            studentId: profile.student_id,
+            role: profile.role,
+            isVerified: profile.is_verified,
+            loyaltyPoints: profile.loyalty_points,
+            createdAt: new Date(profile.created_at)
+          };
+          setUser(userData);
+          toast.success('Login successful!');
+          setIsLoading(false);
+          return true;
+        }
+      }
+
+      setIsLoading(false);
+      return false;
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('Login failed. Please try again.');
+      setIsLoading(false);
+      return false;
     }
-    
-    setIsLoading(false);
-    return false;
   };
 
   const register = async (userData: Partial<User> & { password: string }): Promise<boolean> => {
     setIsLoading(true);
     
-    // Validate email domain
-    if (!userData.email?.endsWith('@iiitkottayam.ac.in')) {
+    try {
+      // Validate email domain
+      if (!userData.email?.endsWith('@iiitkottayam.ac.in')) {
+        toast.error('Please use your IIIT Kottayam email address');
+        setIsLoading(false);
+        return false;
+      }
+
+      // Check if user already exists
+      const { data: existingUser } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', userData.email)
+        .single();
+
+      if (existingUser) {
+        toast.error('User already exists with this email');
+        setIsLoading(false);
+        return false;
+      }
+
+      // Create auth user
+      const { data: authData, error: authError } = await supabase.auth.signUp({
+        email: userData.email,
+        password: userData.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/verify-email`
+        }
+      });
+
+      if (authError) {
+        toast.error(authError.message);
+        setIsLoading(false);
+        return false;
+      }
+
+      if (authData.user) {
+        // Create user profile
+        const { error: profileError } = await supabase
+          .from('users')
+          .insert({
+            id: authData.user.id,
+            name: userData.name!,
+            email: userData.email!,
+            student_id: userData.studentId,
+            role: 'student',
+            is_verified: false,
+            loyalty_points: 0
+          });
+
+        if (profileError) {
+          toast.error('Failed to create user profile');
+          setIsLoading(false);
+          return false;
+        }
+
+        // Generate and send OTP
+        const otp = generateOTP();
+        const otpSent = await sendOTPEmail(userData.email!, otp);
+        
+        if (otpSent) {
+          toast.success('Registration successful! Please check your email for OTP verification.');
+          setIsLoading(false);
+          return true;
+        } else {
+          toast.error('Failed to send verification email');
+          setIsLoading(false);
+          return false;
+        }
+      }
+
+      setIsLoading(false);
+      return false;
+    } catch (error) {
+      console.error('Registration error:', error);
+      toast.error('Registration failed. Please try again.');
       setIsLoading(false);
       return false;
     }
-
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-
-    const students = JSON.parse(localStorage.getItem('unifood_students') || '[]');
-    
-    // Check if user already exists
-    if (students.some((s: User) => s.email === userData.email)) {
-      setIsLoading(false);
-      return false;
-    }
-
-    const newStudent: User = {
-      id: `student_${Date.now()}`,
-      name: userData.name!,
-      email: userData.email!,
-      studentId: userData.studentId,
-      role: 'student',
-      isVerified: false,
-      createdAt: new Date(),
-      loyaltyPoints: 0
-    };
-
-    students.push(newStudent);
-    localStorage.setItem('unifood_students', JSON.stringify(students));
-    localStorage.setItem('pending_verification', JSON.stringify({ email: userData.email, otp: '123456' }));
-    
-    setIsLoading(false);
-    return true;
   };
 
   const sendOTP = async (email: string): Promise<boolean> => {
-    // Simulate sending OTP
-    await new Promise(resolve => setTimeout(resolve, 500));
-    localStorage.setItem('pending_verification', JSON.stringify({ email, otp: '123456' }));
-    return true;
+    try {
+      const otp = generateOTP();
+      const success = await sendOTPEmail(email, otp);
+      if (success) {
+        toast.success('OTP sent to your email');
+      } else {
+        toast.error('Failed to send OTP');
+      }
+      return success;
+    } catch (error) {
+      console.error('Send OTP error:', error);
+      toast.error('Failed to send OTP');
+      return false;
+    }
   };
 
   const verifyOTP = async (email: string, otp: string): Promise<boolean> => {
-    const pending = JSON.parse(localStorage.getItem('pending_verification') || '{}');
-    
-    if (pending.email === email && pending.otp === otp) {
-      const students = JSON.parse(localStorage.getItem('unifood_students') || '[]');
-      const updatedStudents = students.map((s: User) => 
-        s.email === email ? { ...s, isVerified: true } : s
-      );
-      localStorage.setItem('unifood_students', JSON.stringify(updatedStudents));
-      localStorage.removeItem('pending_verification');
-      return true;
+    try {
+      const isValid = await verifyOTPLib(email, otp);
+      
+      if (isValid) {
+        // Update user verification status
+        const { error } = await supabase
+          .from('users')
+          .update({ is_verified: true })
+          .eq('email', email);
+
+        if (!error) {
+          toast.success('Email verified successfully!');
+          return true;
+        }
+      }
+      
+      toast.error('Invalid or expired OTP');
+      return false;
+    } catch (error) {
+      console.error('OTP verification error:', error);
+      toast.error('OTP verification failed');
+      return false;
     }
-    
-    return false;
   };
 
   const resetPassword = async (email: string): Promise<boolean> => {
-    // Simulate password reset
-    await new Promise(resolve => setTimeout(resolve, 500));
-    return email.endsWith('@iiitkottayam.ac.in');
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`
+      });
+
+      if (error) {
+        toast.error(error.message);
+        return false;
+      }
+
+      toast.success('Password reset email sent!');
+      return true;
+    } catch (error) {
+      console.error('Password reset error:', error);
+      toast.error('Failed to send password reset email');
+      return false;
+    }
   };
 
   const logout = () => {
+    supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('unifood_user');
+    toast.success('Logged out successfully');
   };
 
   return (

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import React from 'react';
+import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { AppProvider } from './contexts/AppContext';
 import { useAuth } from './contexts/AuthContext';
 import { AuthWrapper } from './components/auth/AuthWrapper';
 import { Header } from './components/common/Header';
-// import { Footer } from './components/common/Footer';
 import { Cart } from './components/student/Cart';
 import { Settings } from './components/common/Settings';
 import { StudentDashboard } from './components/student/StudentDashboard';
@@ -41,12 +41,34 @@ const AppContent: React.FC = () => {
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
+      <Toaster 
+        position="top-right"
+        toastOptions={{
+          duration: 4000,
+          style: {
+            background: '#363636',
+            color: '#fff',
+          },
+          success: {
+            duration: 3000,
+            iconTheme: {
+              primary: '#4ade80',
+              secondary: '#fff',
+            },
+          },
+          error: {
+            duration: 5000,
+            iconTheme: {
+              primary: '#ef4444',
+              secondary: '#fff',
+            },
+          },
+        }}
+      />
       <Header onNavigate={handleNavigate} currentPage={currentPage} />
       <main className="flex-1">
         {renderContent()}
       </main>
-      {/* Uncomment the next line to enable Footer */}
-      {/* <Footer /> */}
     </div>
   );
 };

@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
+import { supabase } from '../lib/supabase';
+import toast from 'react-hot-toast';
 import { MenuItem, CartItem, Order, Review, TimeSlot, Notification } from '../types';
 import { useAuth } from './AuthContext';
 
@@ -15,7 +17,7 @@ interface AppContextType {
 
   // Orders
   orders: Order[];
-  createOrder: (scheduledTime: string, specialInstructions?: string) => Promise<string>;
+  createOrder: (scheduledTime: string, specialInstructions?: string, paymentId?: string) => Promise<string>;
   updateOrderStatus: (orderId: string, status: Order['status']) => void;
   
   // Reviews
@@ -163,29 +165,156 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
   // Load data from localStorage on mount
   useEffect(() => {
-    const savedOrders = localStorage.getItem('unifood_orders');
-    const savedReviews = localStorage.getItem('unifood_reviews');
-    const savedMenuItems = localStorage.getItem('unifood_menu');
-    
-    if (savedOrders) setOrders(JSON.parse(savedOrders));
-    if (savedReviews) setReviews(JSON.parse(savedReviews));
-    if (savedMenuItems) setMenuItems(JSON.parse(savedMenuItems));
-    
+    loadDataFromSupabase();
     generateTimeSlots();
   }, []);
 
-  // Save to localStorage when data changes
-  useEffect(() => {
-    localStorage.setItem('unifood_orders', JSON.stringify(orders));
-  }, [orders]);
+  const loadDataFromSupabase = async () => {
+    try {
+      // Load menu items
+      const { data: menuData } = await supabase
+        .from('menu_items')
+        .select('*')
+        .eq('is_available', true);
+      
+      if (menuData && menuData.length > 0) {
+        const formattedMenuItems: MenuItem[] = menuData.map(item => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          category: item.category,
+          image: item.image,
+          isVeg: item.is_veg,
+          cuisine: item.cuisine,
+          spiceLevel: item.spice_level,
+          allergens: item.allergens || [],
+          nutritionalInfo: item.nutritional_info || { calories: 0, protein: 0, carbs: 0, fat: 0 },
+          isAvailable: item.is_available,
+          ingredients: item.ingredients || [],
+          averageRating: item.average_rating,
+          reviewCount: item.review_count,
+          preparationTime: item.preparation_time
+        }));
+        setMenuItems(formattedMenuItems);
+      } else {
+        // If no data in Supabase, use sample data and insert it
+        await insertSampleData();
+      }
 
-  useEffect(() => {
-    localStorage.setItem('unifood_reviews', JSON.stringify(reviews));
-  }, [reviews]);
+      // Load orders if user is logged in
+      if (user) {
+        const { data: ordersData } = await supabase
+          .from('orders')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        if (ordersData) {
+          const formattedOrders: Order[] = ordersData.map(order => ({
+            id: order.id,
+            userId: order.user_id,
+            items: order.items,
+            totalAmount: order.total_amount,
+            status: order.status,
+            scheduledTime: order.scheduled_time,
+            token: order.token,
+            paymentId: order.payment_id,
+            specialInstructions: order.special_instructions,
+            estimatedPreparationTime: order.estimated_preparation_time,
+            createdAt: new Date(order.created_at)
+          }));
+          setOrders(formattedOrders);
+        }
 
+        // Load reviews
+        const { data: reviewsData } = await supabase
+          .from('reviews')
+          .select('*')
+          .order('created_at', { ascending: false });
+        
+        if (reviewsData) {
+          const formattedReviews: Review[] = reviewsData.map(review => ({
+            id: review.id,
+            userId: review.user_id,
+            userName: review.user_name,
+            menuItemId: review.menu_item_id,
+            rating: review.rating,
+            comment: review.comment,
+            createdAt: new Date(review.created_at)
+          }));
+          setReviews(formattedReviews);
+        }
+
+        // Load notifications
+        const { data: notificationsData } = await supabase
+          .from('notifications')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('created_at', { ascending: false });
+        
+        if (notificationsData) {
+          const formattedNotifications: Notification[] = notificationsData.map(notif => ({
+            id: notif.id,
+            userId: notif.user_id,
+            title: notif.title,
+            message: notif.message,
+            type: notif.type,
+            read: notif.read,
+            createdAt: new Date(notif.created_at)
+          }));
+          setNotifications(formattedNotifications);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading data from Supabase:', error);
+      // Fallback to sample data
+      setMenuItems(SAMPLE_MENU_ITEMS);
+    }
+  };
+
+  const insertSampleData = async () => {
+    try {
+      const { error } = await supabase
+        .from('menu_items')
+        .insert(SAMPLE_MENU_ITEMS.map(item => ({
+          id: item.id,
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          category: item.category,
+          image: item.image,
+          is_veg: item.isVeg,
+          cuisine: item.cuisine,
+          spice_level: item.spiceLevel,
+          allergens: item.allergens,
+          nutritional_info: item.nutritionalInfo,
+          is_available: item.isAvailable,
+          ingredients: item.ingredients,
+          average_rating: item.averageRating,
+          review_count: item.reviewCount,
+          preparation_time: item.preparationTime
+        })));
+
+      if (!error) {
+        setMenuItems(SAMPLE_MENU_ITEMS);
+      }
+    } catch (error) {
+      console.error('Error inserting sample data:', error);
+      setMenuItems(SAMPLE_MENU_ITEMS);
+    }
+  };
+
+  // Reload data when user changes
   useEffect(() => {
-    localStorage.setItem('unifood_menu', JSON.stringify(menuItems));
-  }, [menuItems]);
+    if (user) {
+      loadDataFromSupabase();
+    } else {
+      setOrders([]);
+      setReviews([]);
+      setNotifications([]);
+    }
+  }, [user]);
 
   const generateTimeSlots = () => {
     const slots: TimeSlot[] = [];
@@ -262,146 +391,360 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const cartTotal = cartItems.reduce((total, item) => total + (item.price * (item.quantity || 0)), 0);
 
   const generateDailyToken = (): string => {
-    const today = new Date().toDateString();
-    let tokenCount = parseInt(localStorage.getItem(`token_count_${today}`) || '0') + 1;
-    localStorage.setItem(`token_count_${today}`, tokenCount.toString());
-    return `${today.replace(/\s+/g, '').toUpperCase().slice(0, 8)}-${tokenCount.toString().padStart(3, '0')}`;
+    const today = new Date().toISOString().split('T')[0];
+    const randomNum = Math.floor(Math.random() * 1000).toString().padStart(3, '0');
+    return `${today.replace(/-/g, '').slice(2)}-${randomNum}`;
   };
 
-  const createOrder = async (scheduledTime: string, specialInstructions?: string): Promise<string> => {
+  const createOrder = async (scheduledTime: string, specialInstructions?: string, paymentId?: string): Promise<string> => {
     if (!user || cartItems.length === 0) return '';
 
-    const orderId = `ORDER_${Date.now()}`;
-    const token = generateDailyToken();
-    const estimatedTime = cartItems.reduce((total, item) => Math.max(total, item.preparationTime), 0);
+    try {
+      const token = generateDailyToken();
+      const estimatedTime = cartItems.reduce((total, item) => Math.max(total, item.preparationTime), 0);
 
-    const newOrder: Order = {
-      id: orderId,
-      userId: user.id,
-      items: [...cartItems],
-      totalAmount: cartTotal,
-      status: 'ordered',
-      scheduledTime,
-      token,
-      createdAt: new Date(),
-      specialInstructions,
-      estimatedPreparationTime: estimatedTime
-    };
+      const { data, error } = await supabase
+        .from('orders')
+        .insert({
+          user_id: user.id,
+          items: cartItems,
+          total_amount: cartTotal,
+          status: 'ordered',
+          scheduled_time: scheduledTime,
+          token,
+          payment_id: paymentId,
+          payment_status: paymentId ? 'completed' : 'pending',
+          special_instructions: specialInstructions,
+          estimated_preparation_time: estimatedTime
+        })
+        .select()
+        .single();
 
-    setOrders(prev => [...prev, newOrder]);
-    clearCart();
+      if (error) {
+        console.error('Error creating order:', error);
+        toast.error('Failed to create order');
+        return '';
+      }
 
-    // Add notification
-    addNotification({
-      userId: user.id,
-      title: 'Order Placed Successfully',
-      message: `Your order #${token} has been placed and will be ready by ${scheduledTime}`,
-      type: 'success',
-      read: false
-    });
+      if (data) {
+        const newOrder: Order = {
+          id: data.id,
+          userId: data.user_id,
+          items: data.items,
+          totalAmount: data.total_amount,
+          status: data.status,
+          scheduledTime: data.scheduled_time,
+          token: data.token,
+          paymentId: data.payment_id,
+          specialInstructions: data.special_instructions,
+          estimatedPreparationTime: data.estimated_preparation_time,
+          createdAt: new Date(data.created_at)
+        };
 
-    return orderId;
+        setOrders(prev => [newOrder, ...prev]);
+        clearCart();
+
+        // Add notification
+        await addNotification({
+          userId: user.id,
+          title: 'Order Placed Successfully',
+          message: `Your order #${token} has been placed and will be ready by ${scheduledTime}`,
+          type: 'success',
+          read: false
+        });
+
+        return data.id;
+      }
+
+      return '';
+    } catch (error) {
+      console.error('Error creating order:', error);
+      toast.error('Failed to create order');
+      return '';
+    }
   };
 
-  const updateOrderStatus = (orderId: string, status: Order['status']) => {
-    setOrders(prev =>
-      prev.map(order => {
-        if (order.id === orderId) {
-          // Add notification for status change
-          const statusMessages = {
-            preparing: 'Your order is being prepared',
-            ready: 'Your order is ready for pickup',
-            served: 'Your order has been served',
-            cancelled: 'Your order has been cancelled'
-          };
+  const updateOrderStatus = async (orderId: string, status: Order['status']) => {
+    try {
+      const { error } = await supabase
+        .from('orders')
+        .update({ status })
+        .eq('id', orderId);
 
-          if (statusMessages[status]) {
-            addNotification({
-              userId: order.userId,
-              title: `Order ${status.charAt(0).toUpperCase() + status.slice(1)}`,
-              message: `${statusMessages[status]} - Token: ${order.token}`,
-              type: status === 'cancelled' ? 'error' : 'info',
-              read: false
-            });
-          }
+      if (!error) {
+        setOrders(prev =>
+          prev.map(order => {
+            if (order.id === orderId) {
+              // Add notification for status change
+              const statusMessages = {
+                preparing: 'Your order is being prepared',
+                ready: 'Your order is ready for pickup',
+                served: 'Your order has been served',
+                cancelled: 'Your order has been cancelled'
+              };
 
-          return { ...order, status };
-        }
-        return order;
-      })
-    );
+              if (statusMessages[status]) {
+                addNotification({
+                  userId: order.userId,
+                  title: `Order ${status.charAt(0).toUpperCase() + status.slice(1)}`,
+                  message: `${statusMessages[status]} - Token: ${order.token}`,
+                  type: status === 'cancelled' ? 'error' : 'info',
+                  read: false
+                });
+              }
+
+              return { ...order, status };
+            }
+            return order;
+          })
+        );
+      }
+    } catch (error) {
+      console.error('Error updating order status:', error);
+      toast.error('Failed to update order status');
+    }
   };
 
-  const addReview = (menuItemId: string, rating: number, comment: string) => {
+  const addReview = async (menuItemId: string, rating: number, comment: string) => {
     if (!user) return;
 
-    const newReview: Review = {
-      id: `review_${Date.now()}`,
-      userId: user.id,
-      userName: user.name,
-      menuItemId,
-      rating,
-      comment,
-      createdAt: new Date()
-    };
+    try {
+      const { data, error } = await supabase
+        .from('reviews')
+        .insert({
+          user_id: user.id,
+          user_name: user.name,
+          menu_item_id: menuItemId,
+          rating,
+          comment
+        })
+        .select()
+        .single();
 
-    setReviews(prev => [...prev, newReview]);
+      if (error) {
+        console.error('Error adding review:', error);
+        toast.error('Failed to add review');
+        return;
+      }
 
-    // Update menu item rating
-    setMenuItems(prev =>
-      prev.map(item => {
-        if (item.id === menuItemId) {
-          const itemReviews = [...reviews.filter(r => r.menuItemId === menuItemId), newReview];
-          const averageRating = itemReviews.reduce((sum, r) => sum + r.rating, 0) / itemReviews.length;
-          return {
-            ...item,
-            averageRating: Math.round(averageRating * 10) / 10,
-            reviewCount: itemReviews.length
-          };
-        }
-        return item;
-      })
-    );
+      if (data) {
+        const newReview: Review = {
+          id: data.id,
+          userId: data.user_id,
+          userName: data.user_name,
+          menuItemId: data.menu_item_id,
+          rating: data.rating,
+          comment: data.comment,
+          createdAt: new Date(data.created_at)
+        };
+
+        setReviews(prev => [newReview, ...prev]);
+
+        // Update menu item rating
+        const itemReviews = [...reviews.filter(r => r.menuItemId === menuItemId), newReview];
+        const averageRating = itemReviews.reduce((sum, r) => sum + r.rating, 0) / itemReviews.length;
+        const reviewCount = itemReviews.length;
+
+        await supabase
+          .from('menu_items')
+          .update({
+            average_rating: Math.round(averageRating * 10) / 10,
+            review_count: reviewCount
+          })
+          .eq('id', menuItemId);
+
+        setMenuItems(prev =>
+          prev.map(item => {
+            if (item.id === menuItemId) {
+              return {
+                ...item,
+                averageRating: Math.round(averageRating * 10) / 10,
+                reviewCount
+              };
+            }
+            return item;
+          })
+        );
+
+        toast.success('Review added successfully!');
+      }
+    } catch (error) {
+      console.error('Error adding review:', error);
+      toast.error('Failed to add review');
+    }
   };
 
-  const addNotification = (notification: Omit<Notification, 'id' | 'createdAt'>) => {
-    const newNotification: Notification = {
-      ...notification,
-      id: `notif_${Date.now()}`,
-      createdAt: new Date()
-    };
-    setNotifications(prev => [newNotification, ...prev]);
+  const addNotification = async (notification: Omit<Notification, 'id' | 'createdAt'>) => {
+    try {
+      const { data, error } = await supabase
+        .from('notifications')
+        .insert({
+          user_id: notification.userId,
+          title: notification.title,
+          message: notification.message,
+          type: notification.type,
+          read: notification.read
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding notification:', error);
+        return;
+      }
+
+      if (data) {
+        const newNotification: Notification = {
+          id: data.id,
+          userId: data.user_id,
+          title: data.title,
+          message: data.message,
+          type: data.type,
+          read: data.read,
+          createdAt: new Date(data.created_at)
+        };
+        setNotifications(prev => [newNotification, ...prev]);
+      }
+    } catch (error) {
+      console.error('Error adding notification:', error);
+    }
   };
 
-  const markNotificationRead = (notificationId: string) => {
-    setNotifications(prev =>
-      prev.map(notif =>
-        notif.id === notificationId ? { ...notif, read: true } : notif
-      )
-    );
+  const markNotificationRead = async (notificationId: string) => {
+    try {
+      const { error } = await supabase
+        .from('notifications')
+        .update({ read: true })
+        .eq('id', notificationId);
+
+      if (!error) {
+        setNotifications(prev =>
+          prev.map(notif =>
+            notif.id === notificationId ? { ...notif, read: true } : notif
+          )
+        );
+      }
+    } catch (error) {
+      console.error('Error marking notification as read:', error);
+    }
   };
 
   // Manager functions
-  const addMenuItem = (item: Omit<MenuItem, 'id' | 'averageRating' | 'reviewCount'>) => {
-    const newItem: MenuItem = {
-      ...item,
-      id: `item_${Date.now()}`,
-      averageRating: 0,
-      reviewCount: 0
-    };
-    setMenuItems(prev => [...prev, newItem]);
+  const addMenuItem = async (item: Omit<MenuItem, 'id' | 'averageRating' | 'reviewCount'>) => {
+    try {
+      const { data, error } = await supabase
+        .from('menu_items')
+        .insert({
+          name: item.name,
+          description: item.description,
+          price: item.price,
+          category: item.category,
+          image: item.image,
+          is_veg: item.isVeg,
+          cuisine: item.cuisine,
+          spice_level: item.spiceLevel,
+          allergens: item.allergens,
+          nutritional_info: item.nutritionalInfo,
+          is_available: item.isAvailable,
+          ingredients: item.ingredients,
+          average_rating: 0,
+          review_count: 0,
+          preparation_time: item.preparationTime
+        })
+        .select()
+        .single();
+
+      if (error) {
+        console.error('Error adding menu item:', error);
+        toast.error('Failed to add menu item');
+        return;
+      }
+
+      if (data) {
+        const newItem: MenuItem = {
+          id: data.id,
+          name: data.name,
+          description: data.description,
+          price: data.price,
+          category: data.category,
+          image: data.image,
+          isVeg: data.is_veg,
+          cuisine: data.cuisine,
+          spiceLevel: data.spice_level,
+          allergens: data.allergens || [],
+          nutritionalInfo: data.nutritional_info || { calories: 0, protein: 0, carbs: 0, fat: 0 },
+          isAvailable: data.is_available,
+          ingredients: data.ingredients || [],
+          averageRating: data.average_rating,
+          reviewCount: data.review_count,
+          preparationTime: data.preparation_time
+        };
+        setMenuItems(prev => [...prev, newItem]);
+        toast.success('Menu item added successfully!');
+      }
+    } catch (error) {
+      console.error('Error adding menu item:', error);
+      toast.error('Failed to add menu item');
+    }
   };
 
-  const updateMenuItem = (itemId: string, updates: Partial<MenuItem>) => {
-    setMenuItems(prev =>
-      prev.map(item =>
-        item.id === itemId ? { ...item, ...updates } : item
-      )
-    );
+  const updateMenuItem = async (itemId: string, updates: Partial<MenuItem>) => {
+    try {
+      const updateData: any = {};
+      if (updates.name !== undefined) updateData.name = updates.name;
+      if (updates.description !== undefined) updateData.description = updates.description;
+      if (updates.price !== undefined) updateData.price = updates.price;
+      if (updates.category !== undefined) updateData.category = updates.category;
+      if (updates.image !== undefined) updateData.image = updates.image;
+      if (updates.isVeg !== undefined) updateData.is_veg = updates.isVeg;
+      if (updates.cuisine !== undefined) updateData.cuisine = updates.cuisine;
+      if (updates.spiceLevel !== undefined) updateData.spice_level = updates.spiceLevel;
+      if (updates.allergens !== undefined) updateData.allergens = updates.allergens;
+      if (updates.nutritionalInfo !== undefined) updateData.nutritional_info = updates.nutritionalInfo;
+      if (updates.isAvailable !== undefined) updateData.is_available = updates.isAvailable;
+      if (updates.ingredients !== undefined) updateData.ingredients = updates.ingredients;
+      if (updates.preparationTime !== undefined) updateData.preparation_time = updates.preparationTime;
+
+      const { error } = await supabase
+        .from('menu_items')
+        .update(updateData)
+        .eq('id', itemId);
+
+      if (!error) {
+        setMenuItems(prev =>
+          prev.map(item =>
+            item.id === itemId ? { ...item, ...updates } : item
+          )
+        );
+        toast.success('Menu item updated successfully!');
+      } else {
+        console.error('Error updating menu item:', error);
+        toast.error('Failed to update menu item');
+      }
+    } catch (error) {
+      console.error('Error updating menu item:', error);
+      toast.error('Failed to update menu item');
+    }
   };
 
-  const deleteMenuItem = (itemId: string) => {
-    setMenuItems(prev => prev.filter(item => item.id !== itemId));
+  const deleteMenuItem = async (itemId: string) => {
+    try {
+      const { error } = await supabase
+        .from('menu_items')
+        .delete()
+        .eq('id', itemId);
+
+      if (!error) {
+        setMenuItems(prev => prev.filter(item => item.id !== itemId));
+        toast.success('Menu item deleted successfully!');
+      } else {
+        console.error('Error deleting menu item:', error);
+        toast.error('Failed to delete menu item');
+      }
+    } catch (error) {
+      console.error('Error deleting menu item:', error);
+      toast.error('Failed to delete menu item');
+    }
   };
 
   return (

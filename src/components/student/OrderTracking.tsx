@@ -109,6 +109,20 @@ export const OrderTracking: React.FC = () => {
       minute: '2-digit'
     });
   };
+  const handleReorder = (order: Order) => {
+    // Add all items from the previous order to cart
+    order.items.forEach(item => {
+      // Find the current menu item to get updated details
+      const currentMenuItem = menuItems.find(menuItem => menuItem.id === item.id);
+      if (currentMenuItem && currentMenuItem.isAvailable) {
+        for (let i = 0; i < item.quantity; i++) {
+          addToCart(currentMenuItem);
+        }
+      }
+    });
+    
+    toast.success(`${order.items.length} items added to cart from previous order`);
+  };
 
   return (
     <div className="min-h-screen bg-gray-50 py-8">
@@ -307,6 +321,15 @@ export const OrderTracking: React.FC = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Comment</label>
+            {/* Reorder Functionality */}
+            {order.status === 'served' && (
+              <button 
+                onClick={() => handleReorder(order)}
+                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                Reorder
+              </button>
+            )}
                   <textarea
                     value={reviewData.comment}
                     onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value })}
