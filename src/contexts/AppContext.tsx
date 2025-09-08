@@ -163,7 +163,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('');
 
-  // Load data from localStorage on mount
+  // Load data from Supabase on mount
   useEffect(() => {
     loadDataFromSupabase();
     generateTimeSlots();
@@ -204,11 +204,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
       // Load orders if user is logged in
       if (user) {
-        const { data: ordersData } = await supabase
-          .from('orders')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false });
+        let orderQuery = supabase.from('orders').select('*').order('created_at', { ascending: false });
+        
+        // 🚨 CRITICAL FIX: Conditionally filter orders based on user role
+        if (user.role === 'student') {
+          orderQuery = orderQuery.eq('user_id', user.id);
+        }
+
+        const { data: ordersData } = await orderQuery;
         
         if (ordersData) {
           const formattedOrders: Order[] = ordersData.map(order => ({
@@ -321,23 +324,32 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const now = new Date();
     const currentHour = now.getHours();
     const currentMinute = now.getMinutes();
-
-    // Generate slots from current time + 30 minutes to 10 PM
-    for (let hour = currentHour; hour <= 22; hour++) {
-      for (let minute = 0; minute < 60; minute += 15) {
-        // Skip past time slots
-        if (hour === currentHour && minute <= currentMinute + 30) continue;
-        
-        const timeString = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`;
-        slots.push({
-          time: timeString,
-          available: true,
-          capacity: 20,
-          booked: Math.floor(Math.random() * 10)
-        });
-      }
-    }
+    const closingHour = 22; // 10 PM
+    const closingMinute = 0;
     
+    // Check if the canteen is closed for the day
+    if (currentHour > closingHour || (currentHour === closingHour && currentMinute >= closingMinute)) {
+        setTimeSlots([]); // Clear time slots if past closing time
+        return;
+    }
+
+    const startHour = currentHour;
+    const startMinute = Math.ceil((currentMinute + 30) / 15) * 15;
+    
+    let currentSlotTime = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startHour, startMinute);
+    const endOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate(), closingHour, closingMinute);
+
+    while (currentSlotTime <= endOfDay) {
+      const timeString = `${currentSlotTime.getHours().toString().padStart(2, '0')}:${currentSlotTime.getMinutes().toString().padStart(2, '0')}`;
+      slots.push({
+        time: timeString,
+        available: true,
+        capacity: 20,
+        booked: Math.floor(Math.random() * 10)
+      });
+      currentSlotTime.setMinutes(currentSlotTime.getMinutes() + 15);
+    }
+
     setTimeSlots(slots);
   };
 
@@ -554,16 +566,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           .eq('id', menuItemId);
 
         setMenuItems(prev =>
-          prev.map(item => {
-            if (item.id === menuItemId) {
-              return {
-                ...item,
-                averageRating: Math.round(averageRating * 10) / 10,
-                reviewCount
-              };
-            }
-            return item;
-          })
+          prev.map(item =>
+            item.id === menuItemId ? {
+              ...item,
+              averageRating: Math.round(averageRating * 10) / 10,
+              reviewCount
+            } : item
+          )
         );
 
         toast.success('Review added successfully!');

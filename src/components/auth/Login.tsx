@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Mail, Lock, Eye, EyeOff, AlertCircle } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 interface LoginProps {
   onSwitchToRegister: () => void;
@@ -9,6 +10,7 @@ interface LoginProps {
 
 export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onSwitchToReset }) => {
   const { login, isLoading } = useAuth();
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     email: '',
     password: ''
@@ -22,7 +24,9 @@ export const Login: React.FC<LoginProps> = ({ onSwitchToRegister, onSwitchToRese
 
     try {
       const success = await login(formData.email, formData.password);
-      if (!success) {
+      if (success) {
+        navigate('/');
+      } else {
         setError('Invalid credentials. Please check your email and password.');
       }
     } catch (err) {

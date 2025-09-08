@@ -2,9 +2,8 @@ import { supabase } from './supabase'
 
 export const sendOTPEmail = async (email: string, otp: string): Promise<boolean> => {
   try {
-    // In a real application, you would use a service like SendGrid, Mailgun, or AWS SES
-    // For demo purposes, we'll simulate the email sending and store the OTP in the database
-    
+    // NOTE: This function simulates sending an email for a demo.
+    // In a production environment, you would integrate a real email service here.
     const { error } = await supabase
       .from('otp_verifications')
       .insert({
@@ -22,7 +21,8 @@ export const sendOTPEmail = async (email: string, otp: string): Promise<boolean>
     // Simulate email sending delay
     await new Promise(resolve => setTimeout(resolve, 1000))
     
-    console.log(`OTP ${otp} sent to ${email}`) // In production, this would be sent via email
+    // In production, you would replace this with an API call to your email service (e.g., Resend, SendGrid)
+    console.log(`OTP ${otp} sent to ${email} (simulated)`) 
     return true
   } catch (error) {
     console.error('Error sending OTP email:', error)

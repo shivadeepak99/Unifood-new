@@ -11,11 +11,12 @@ import {
 } from 'lucide-react';
 import { useApp } from '../../contexts/AppContext';
 import { useAuth } from '../../contexts/AuthContext';
-import { Order } from '../../types';
+import { Order, MenuItem } from '../../types';
+import toast from 'react-hot-toast'; // ✅ Add toast for better user feedback
 
 export const OrderTracking: React.FC = () => {
   const { user } = useAuth();
-  const { orders, reviews, addReview } = useApp();
+  const { orders, reviews, addReview, addToCart, menuItems } = useApp(); // ✅ Add menuItems and addToCart
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [showReviewModal, setShowReviewModal] = useState(false);
   const [reviewData, setReviewData] = useState({ rating: 5, comment: '', itemId: '' });
@@ -35,7 +36,8 @@ export const OrderTracking: React.FC = () => {
   useEffect(() => {
     // Simulate real-time updates
     const interval = setInterval(() => {
-      // This would be replaced with actual WebSocket updates
+      // In a real app, this would fetch fresh data
+      // For now, it just serves as a placeholder
     }, 30000);
 
     return () => clearInterval(interval);
@@ -95,10 +97,30 @@ export const OrderTracking: React.FC = () => {
     setShowReviewModal(true);
   };
 
-  const submitReview = () => {
-    addReview(reviewData.itemId, reviewData.rating, reviewData.comment);
-    setShowReviewModal(false);
-    setReviewData({ rating: 5, comment: '', itemId: '' });
+  // ✅ Make this function async and await the result
+  const submitReview = async () => {
+    if (!reviewData.comment.trim()) {
+      toast.error('Review comment cannot be empty.');
+      return;
+    }
+    
+    // Add toast to show loading state
+    const reviewPromise = addReview(reviewData.itemId, reviewData.rating, reviewData.comment);
+
+    toast.promise(reviewPromise, {
+      loading: 'Submitting review...',
+      success: 'Review added successfully!',
+      error: 'Failed to add review.'
+    });
+
+    try {
+      await reviewPromise;
+      setShowReviewModal(false);
+      setReviewData({ rating: 5, comment: '', itemId: '' });
+    } catch (error) {
+      // The toast.promise handles the error message, but we still need to catch it.
+      console.error("Error during review submission:", error);
+    }
   };
 
   const formatDate = (date: Date) => {
@@ -109,12 +131,12 @@ export const OrderTracking: React.FC = () => {
       minute: '2-digit'
     });
   };
+
   const handleReorder = (order: Order) => {
-    // Add all items from the previous order to cart
     order.items.forEach(item => {
-      // Find the current menu item to get updated details
       const currentMenuItem = menuItems.find(menuItem => menuItem.id === item.id);
       if (currentMenuItem && currentMenuItem.isAvailable) {
+        // ✅ Corrected logic: Use a single call to addToCart for each quantity
         for (let i = 0; i < item.quantity; i++) {
           addToCart(currentMenuItem);
         }
@@ -278,7 +300,10 @@ export const OrderTracking: React.FC = () => {
                   </div>
 
                   {order.status === 'served' && (
-                    <button className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors">
+                    <button 
+                      onClick={() => handleReorder(order)}
+                      className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
+                    >
                       Reorder
                     </button>
                   )}
@@ -321,15 +346,6 @@ export const OrderTracking: React.FC = () => {
                 
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-2">Comment</label>
-            {/* Reorder Functionality */}
-            {order.status === 'served' && (
-              <button 
-                onClick={() => handleReorder(order)}
-                className="w-full bg-blue-600 text-white py-2 px-4 rounded-lg hover:bg-blue-700 transition-colors"
-              >
-                Reorder
-              </button>
-            )}
                   <textarea
                     value={reviewData.comment}
                     onChange={(e) => setReviewData({ ...reviewData, comment: e.target.value })}

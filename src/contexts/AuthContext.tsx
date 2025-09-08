@@ -25,34 +25,51 @@ export const useAuth = () => {
   return context;
 };
 
+// Central function to fetch the user's full profile
+const fetchUserProfile = async (userId: string) => {
+  const { data: profile, error } = await supabase
+    .from('users')
+    .select('*')
+    .eq('id', userId)
+    .single();
+
+  if (error) {
+    console.error('Error fetching user profile:', error);
+    return null;
+  }
+  
+  if (profile) {
+    const userData: User = {
+      id: profile.id,
+      name: profile.name,
+      email: profile.email,
+      studentId: profile.student_id,
+      role: profile.role,
+      isVerified: profile.is_verified,
+      loyaltyPoints: profile.loyalty_points,
+      createdAt: new Date(profile.created_at)
+    };
+    return userData;
+  }
+  return null;
+};
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing Supabase session
+    // Initial check for a session
     const getSession = async () => {
+      setIsLoading(true);
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        // Fetch user profile from our users table
-        const { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', session.user.id)
-          .single();
-        
-        if (profile) {
-          const userData: User = {
-            id: profile.id,
-            name: profile.name,
-            email: profile.email,
-            studentId: profile.student_id,
-            role: profile.role,
-            isVerified: profile.is_verified,
-            loyaltyPoints: profile.loyalty_points,
-            createdAt: new Date(profile.created_at)
-          };
+        const userData = await fetchUserProfile(session.user.id);
+        if (userData) {
           setUser(userData);
+        } else {
+          console.warn("User session found, but profile not in DB. Logging out.");
+          await supabase.auth.signOut();
         }
       }
       setIsLoading(false);
@@ -60,10 +77,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     getSession();
 
-    // Listen for auth changes
+    // Listen for auth state changes and update the user state
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log('Auth state changed:', event);
       if (event === 'SIGNED_OUT' || !session) {
         setUser(null);
+      } else if (event === 'SIGNED_IN') {
+        setIsLoading(true);
+        const userData = await fetchUserProfile(session.user.id);
+        if (userData) {
+          setUser(userData);
+          toast.success('Successfully logged in!');
+        } else {
+          console.error("Profile not found after SIGNED_IN event. User needs to register a profile.");
+        }
+        setIsLoading(false);
       }
     });
 
@@ -74,67 +102,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string): Promise<boolean> => {
     setIsLoading(true);
-    
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
+      const { error: authError } = await supabase.auth.signInWithPassword({
         email,
         password
       });
 
-      if (error) {
-        toast.error(error.message);
-        setIsLoading(false);
+      if (authError) {
+        toast.error(authError.message);
         return false;
       }
-
-      if (data.user) {
-        // Fetch user profile
-        const { data: profile } = await supabase
-          .from('users')
-          .select('*')
-          .eq('id', data.user.id)
-          .single();
-
-        if (profile) {
-          const userData: User = {
-            id: profile.id,
-            name: profile.name,
-            email: profile.email,
-            studentId: profile.student_id,
-            role: profile.role,
-            isVerified: profile.is_verified,
-            loyaltyPoints: profile.loyalty_points,
-            createdAt: new Date(profile.created_at)
-          };
-          setUser(userData);
-          toast.success('Login successful!');
-          setIsLoading(false);
-          return true;
-        }
-      }
-
-      setIsLoading(false);
-      return false;
+      return true;
     } catch (error) {
       console.error('Login error:', error);
       toast.error('Login failed. Please try again.');
-      setIsLoading(false);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const register = async (userData: Partial<User> & { password: string }): Promise<boolean> => {
     setIsLoading(true);
-    
     try {
-      // Validate email domain
       if (!userData.email?.endsWith('@iiitkottayam.ac.in')) {
         toast.error('Please use your IIIT Kottayam email address');
-        setIsLoading(false);
         return false;
       }
 
-      // Check if user already exists
       const { data: existingUser } = await supabase
         .from('users')
         .select('id')
@@ -143,27 +138,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (existingUser) {
         toast.error('User already exists with this email');
-        setIsLoading(false);
         return false;
       }
 
-      // Create auth user
       const { data: authData, error: authError } = await supabase.auth.signUp({
         email: userData.email,
-        password: userData.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/verify-email`
-        }
+        password: userData.password
       });
 
       if (authError) {
         toast.error(authError.message);
-        setIsLoading(false);
         return false;
       }
 
       if (authData.user) {
-        // Create user profile
         const { error: profileError } = await supabase
           .from('users')
           .insert({
@@ -177,33 +165,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           });
 
         if (profileError) {
-          toast.error('Failed to create user profile');
-          setIsLoading(false);
+          console.error('Failed to create user profile:', profileError);
+          toast.error('Failed to create user profile. Please try again.');
           return false;
         }
 
-        // Generate and send OTP
         const otp = generateOTP();
         const otpSent = await sendOTPEmail(userData.email!, otp);
-        
         if (otpSent) {
           toast.success('Registration successful! Please check your email for OTP verification.');
-          setIsLoading(false);
           return true;
-        } else {
-          toast.error('Failed to send verification email');
-          setIsLoading(false);
-          return false;
         }
       }
-
-      setIsLoading(false);
       return false;
     } catch (error) {
       console.error('Registration error:', error);
       toast.error('Registration failed. Please try again.');
-      setIsLoading(false);
       return false;
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -227,20 +207,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verifyOTP = async (email: string, otp: string): Promise<boolean> => {
     try {
       const isValid = await verifyOTPLib(email, otp);
-      
       if (isValid) {
-        // Update user verification status
         const { error } = await supabase
           .from('users')
           .update({ is_verified: true })
           .eq('email', email);
 
         if (!error) {
-          toast.success('Email verified successfully!');
+          toast.success('Email verified successfully! You are now logged in.');
           return true;
         }
       }
-      
       toast.error('Invalid or expired OTP');
       return false;
     } catch (error) {
@@ -260,7 +237,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toast.error(error.message);
         return false;
       }
-
       toast.success('Password reset email sent!');
       return true;
     } catch (error) {
