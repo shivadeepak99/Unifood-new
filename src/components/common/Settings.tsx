@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   User, 
   Bell, 
@@ -15,11 +15,10 @@ import {
   Plus
 } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
-import { useApp } from '../../contexts/AppContext';
+import toast from 'react-hot-toast';
 
 export const Settings: React.FC = () => {
-  const { user, logout } = useAuth();
-  const { notifications, markNotificationRead } = useApp();
+  const { user, logout, updateProfile, updatePassword } = useAuth();
   const [activeSection, setActiveSection] = useState('profile');
   const [showPassword, setShowPassword] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'success' | 'error'>('idle');
@@ -73,31 +72,93 @@ export const Settings: React.FC = () => {
   const dietaryOptions = ['Vegetarian', 'Vegan', 'Gluten-Free', 'Dairy-Free', 'Keto', 'Low-Sodium'];
   const allergenOptions = ['Nuts', 'Dairy', 'Gluten', 'Eggs', 'Seafood', 'Soy', 'Shellfish'];
 
+  // 🔥 Load settings from localStorage on mount
+  useEffect(() => {
+    if (user) {
+      const settingsKey = `unifood_settings_${user.id}`;
+      const savedSettings = JSON.parse(localStorage.getItem(settingsKey) || '{}');
+      
+      // Load dietary and allergen preferences
+      if (savedSettings.dietaryRestrictions) {
+        setProfileData(prev => ({ ...prev, dietaryRestrictions: savedSettings.dietaryRestrictions }));
+      }
+      if (savedSettings.allergens) {
+        setProfileData(prev => ({ ...prev, allergens: savedSettings.allergens }));
+      }
+      if (savedSettings.phone) {
+        setProfileData(prev => ({ ...prev, phone: savedSettings.phone }));
+      }
+      if (savedSettings.emergencyContact) {
+        setProfileData(prev => ({ ...prev, emergencyContact: savedSettings.emergencyContact }));
+      }
+      
+      // Load notification settings
+      if (savedSettings.notifications) {
+        setNotificationSettings(savedSettings.notifications);
+      }
+      
+      // Load general settings
+      if (savedSettings.general) {
+        setGeneralSettings(savedSettings.general);
+      }
+      
+      // Load payment methods
+      if (savedSettings.payment) {
+        setPaymentMethods(savedSettings.payment);
+      }
+    }
+  }, [user]);
+
   const handleSave = async (section: string) => {
+    if (!user) return;
+    
     setSaveStatus('saving');
     
-    // Simulate API call
-    await new Promise(resolve => setTimeout(resolve, 1000));
-    
     try {
-      // Save to localStorage for demo
-      const settingsKey = `unifood_settings_${user?.id}`;
-      const currentSettings = JSON.parse(localStorage.getItem(settingsKey) || '{}');
+      if (section === 'profile') {
+        // 🔥 Save profile to Supabase database
+        const success = await updateProfile(user.id, {
+          name: profileData.name,
+          studentId: profileData.studentId
+        });
+        
+        if (!success) {
+          setSaveStatus('error');
+          setTimeout(() => setSaveStatus('idle'), 3000);
+          return;
+        }
+
+        // Also save dietary/allergen preferences to localStorage (not in users table)
+        const settingsKey = `unifood_settings_${user.id}`;
+        const currentSettings = JSON.parse(localStorage.getItem(settingsKey) || '{}');
+        localStorage.setItem(settingsKey, JSON.stringify({
+          ...currentSettings,
+          dietaryRestrictions: profileData.dietaryRestrictions,
+          allergens: profileData.allergens,
+          phone: profileData.phone,
+          emergencyContact: profileData.emergencyContact
+        }));
+      } 
+      else {
+        // For other settings (notifications, general, payment), save to localStorage
+        // TODO: These could be moved to a separate settings table in the future
+        const settingsKey = `unifood_settings_${user.id}`;
+        const currentSettings = JSON.parse(localStorage.getItem(settingsKey) || '{}');
+        
+        const updatedSettings = {
+          ...currentSettings,
+          [section]: section === 'notifications' ? notificationSettings :
+                    section === 'general' ? generalSettings :
+                    section === 'payment' ? paymentMethods : currentSettings[section]
+        };
+        
+        localStorage.setItem(settingsKey, JSON.stringify(updatedSettings));
+      }
       
-      const updatedSettings = {
-        ...currentSettings,
-        [section]: section === 'profile' ? profileData :
-                  section === 'notifications' ? notificationSettings :
-                  section === 'security' ? securitySettings :
-                  section === 'general' ? generalSettings :
-                  section === 'payment' ? paymentMethods : currentSettings[section]
-      };
-      
-      localStorage.setItem(settingsKey, JSON.stringify(updatedSettings));
       setSaveStatus('success');
-      
       setTimeout(() => setSaveStatus('idle'), 2000);
     } catch (error) {
+      console.error('Save settings error:', error);
       setSaveStatus('error');
       setTimeout(() => setSaveStatus('idle'), 3000);
     }
@@ -122,23 +183,49 @@ export const Settings: React.FC = () => {
   };
 
   const handlePasswordChange = async () => {
+    // Validate inputs
+    if (!securitySettings.currentPassword || !securitySettings.newPassword || !securitySettings.confirmPassword) {
+      setSaveStatus('error');
+      toast.error('Please fill in all password fields');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+      return;
+    }
+
     if (securitySettings.newPassword !== securitySettings.confirmPassword) {
       setSaveStatus('error');
+      toast.error('New passwords do not match');
+      setTimeout(() => setSaveStatus('idle'), 3000);
       return;
     }
     
     if (securitySettings.newPassword.length < 6) {
       setSaveStatus('error');
+      toast.error('Password must be at least 6 characters');
+      setTimeout(() => setSaveStatus('idle'), 3000);
       return;
     }
 
-    await handleSave('security');
-    setSecuritySettings(prev => ({
-      ...prev,
-      currentPassword: '',
-      newPassword: '',
-      confirmPassword: ''
-    }));
+    setSaveStatus('saving');
+
+    // 🔥 Update password in Supabase
+    const success = await updatePassword(
+      securitySettings.currentPassword,
+      securitySettings.newPassword
+    );
+
+    if (success) {
+      setSaveStatus('success');
+      setSecuritySettings({
+        currentPassword: '',
+        newPassword: '',
+        confirmPassword: '',
+        twoFactorEnabled: securitySettings.twoFactorEnabled
+      });
+      setTimeout(() => setSaveStatus('idle'), 2000);
+    } else {
+      setSaveStatus('error');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }
   };
 
   const exportData = () => {

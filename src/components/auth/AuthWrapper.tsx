@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { Login } from './Login';
 import { Register } from './Register';
@@ -9,9 +10,14 @@ import { Utensils, GraduationCap } from 'lucide-react';
 type AuthView = 'login' | 'register' | 'verification' | 'reset';
 
 export const AuthWrapper: React.FC = () => {
-  const { isLoading } = useAuth();
+  const { isLoading, user } = useAuth();
   const [currentView, setCurrentView] = useState<AuthView>('login');
   const [verificationEmail, setVerificationEmail] = useState('');
+
+  // 🚀 Redirect to dashboard if user is already logged in
+  if (user) {
+    return <Navigate to="/" replace />;
+  }
 
   const handleSwitchToVerification = (email: string) => {
     setVerificationEmail(email);

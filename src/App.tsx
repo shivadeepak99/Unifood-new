@@ -3,6 +3,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { AppProvider } from './contexts/AppContext';
 import { AuthWrapper } from './components/auth/AuthWrapper';
+import { UpdatePassword } from './components/auth/UpdatePassword';
 import { Header } from './components/common/Header';
 import { Cart } from './components/student/Cart';
 import { Settings } from './components/common/Settings';
@@ -92,6 +93,7 @@ function App() {
           <Routes>
             <Route path="/*" element={<ProtectedContent />} />
             <Route path="/auth" element={<AuthWrapper />} />
+            <Route path="/reset-password" element={<UpdatePassword />} />
           </Routes>
         </AppProvider>
       </AuthProvider>
