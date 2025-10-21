@@ -45,6 +45,11 @@ export const Register: React.FC<RegisterProps> = ({ onSwitchToLogin, onSwitchToV
     try {
       const success = await register(formData);
       if (success) {
+        // 🔐 Store password temporarily in sessionStorage for auto-login after OTP verification
+        // This survives page refresh but is cleared when browser tab closes (secure!)
+        sessionStorage.setItem('unifood_temp_registration_email', formData.email);
+        sessionStorage.setItem('unifood_temp_registration_password', formData.password);
+        
         setSuccess('Registration successful! Please check your email for verification.');
         setTimeout(() => {
           onSwitchToVerification(formData.email);

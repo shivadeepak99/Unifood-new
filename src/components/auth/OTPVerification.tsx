@@ -14,6 +14,8 @@ export const OTPVerification: React.FC<OTPVerificationProps> = ({ email, onSwitc
   const [success, setSuccess] = useState('');
   const [countdown, setCountdown] = useState(60);
   const [canResend, setCanResend] = useState(false);
+  const [attemptCount, setAttemptCount] = useState(0);
+  const [isLocked, setIsLocked] = useState(false);
 
   useEffect(() => {
     if (countdown > 0) {
@@ -29,6 +31,12 @@ export const OTPVerification: React.FC<OTPVerificationProps> = ({ email, onSwitc
     setError('');
     setSuccess('');
 
+    // 🔒 Check if account is locked due to too many attempts
+    if (isLocked) {
+      setError('Too many failed attempts. Please request a new OTP.');
+      return;
+    }
+
     if (otp.length !== 6) {
       setError('Please enter a 6-digit OTP');
       return;
@@ -37,12 +45,26 @@ export const OTPVerification: React.FC<OTPVerificationProps> = ({ email, onSwitc
     try {
       const success = await verifyOTP(email, otp);
       if (success) {
-        setSuccess('Email verified successfully! You can now sign in.');
+        setSuccess('Email verified successfully! Logging you in...');
+        // Clear temporary registration data from sessionStorage
+        sessionStorage.removeItem('unifood_temp_registration_email');
+        sessionStorage.removeItem('unifood_temp_registration_password');
+        // 🎉 AuthContext will auto-login and set user, then AuthWrapper will redirect to dashboard!
+        // Wait a moment to show success message, then navigation happens automatically
         setTimeout(() => {
-          onSwitchToLogin();
-        }, 2000);
+          // The Navigate in AuthWrapper will kick in once user is set
+        }, 1500);
       } else {
-        setError('Invalid OTP. Please check and try again.');
+        // ⚠️ Increment attempt counter on failed verification
+        const newAttemptCount = attemptCount + 1;
+        setAttemptCount(newAttemptCount);
+        
+        if (newAttemptCount >= 5) {
+          setIsLocked(true);
+          setError('Too many failed attempts. Please request a new OTP to try again.');
+        } else {
+          setError(`Invalid or expired OTP. ${5 - newAttemptCount} attempts remaining.`);
+        }
       }
     } catch (err) {
       setError('An error occurred. Please try again.');
@@ -54,6 +76,9 @@ export const OTPVerification: React.FC<OTPVerificationProps> = ({ email, onSwitc
       await sendOTP(email);
       setCountdown(60);
       setCanResend(false);
+      // 🔓 Reset attempt counter and unlock when new OTP is sent
+      setAttemptCount(0);
+      setIsLocked(false);
       setSuccess('OTP sent successfully to your email.');
       setError('');
     } catch (err) {
@@ -150,8 +175,26 @@ export const OTPVerification: React.FC<OTPVerificationProps> = ({ email, onSwitc
         <div className="flex items-start gap-2">
           <Mail className="w-5 h-5 text-yellow-600 flex-shrink-0 mt-0.5" />
           <div>
-            <p className="text-sm text-yellow-800 font-medium">Demo Mode</p>
-            <p className="text-sm text-yellow-700">Use OTP: <strong>123456</strong> for verification</p>
+            <p className="text-sm text-yellow-800 font-medium">🎯 Demo Mode - Testing Made Easy!</p>
+            <p className="text-sm text-yellow-700">
+              <strong>Just use: 123456</strong> to verify your email
+            </p>
+            <p className="text-xs text-yellow-600 mt-1">
+              In production, you'll receive a real OTP via email
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+        <div className="flex items-start gap-2">
+          <Shield className="w-5 h-5 text-blue-600 flex-shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm text-blue-800 font-medium">Security Note</p>
+            <p className="text-sm text-blue-700">
+              For security, verify on the same device you registered from. 
+              After verification, you'll be automatically logged in!
+            </p>
           </div>
         </div>
       </div>

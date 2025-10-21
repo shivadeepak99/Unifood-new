@@ -12,6 +12,8 @@ interface AuthContextType {
   verifyOTP: (email: string, otp: string) => Promise<boolean>;
   sendOTP: (email: string) => Promise<boolean>;
   resetPassword: (email: string) => Promise<boolean>;
+  updateProfile: (userId: string, updates: Partial<User>) => Promise<boolean>;
+  updatePassword: (currentPassword: string, newPassword: string) => Promise<boolean>;
   isLoading: boolean;
 }
 
@@ -213,15 +215,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const verifyOTP = async (email: string, otp: string): Promise<boolean> => {
     try {
+      // 🔍 First check if user is already verified
+      const { data: userData } = await supabase
+        .from('users')
+        .select('is_verified')
+        .eq('email', email)
+        .single();
+      
+      if (userData?.is_verified) {
+        toast.error('Email already verified. Please login to continue.');
+        // Clear any stored credentials since they're trying to verify again
+        sessionStorage.removeItem('unifood_temp_registration_email');
+        sessionStorage.removeItem('unifood_temp_registration_password');
+        return false;
+      }
+
       const isValid = await verifyOTPLib(email, otp);
       if (isValid) {
+        // ✅ Update user verification status
         const { error } = await supabase
           .from('users')
           .update({ is_verified: true })
           .eq('email', email);
 
         if (!error) {
-          toast.success('Email verified successfully! You are now logged in.');
+          // 🎉 AUTO-LOGIN: Check if we have stored password from registration
+          const storedEmail = sessionStorage.getItem('unifood_temp_registration_email');
+          const storedPassword = sessionStorage.getItem('unifood_temp_registration_password');
+          
+          if (storedEmail === email && storedPassword) {
+            // 🔐 Automatically log in the user with stored credentials
+            const { error: loginError } = await supabase.auth.signInWithPassword({
+              email,
+              password: storedPassword
+            });
+            
+            // Clear sensitive data from sessionStorage immediately
+            sessionStorage.removeItem('unifood_temp_registration_email');
+            sessionStorage.removeItem('unifood_temp_registration_password');
+            
+            if (!loginError) {
+              toast.success('Email verified successfully! Welcome to UniFood! 🎉');
+              return true;
+            }
+          }
+          
+          // If auto-login fails or no stored password, still mark as success
+          toast.success('Email verified successfully! Please login to continue.');
           return true;
         }
       }
@@ -236,19 +276,128 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const resetPassword = async (email: string): Promise<boolean> => {
     try {
+      // 🔥 DEVELOPMENT MODE: Log reset link to console instead of sending email
+      const DEMO_MODE = false; // Set to true for console logging only
+      
+      if (DEMO_MODE) {
+        // Store email in localStorage for the UpdatePassword component to use
+        localStorage.setItem('demo_reset_email', email);
+        
+        // Generate a mock reset token for development
+        const mockToken = `demo_reset_token_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+        const resetLink = `${window.location.origin}/reset-password?token=${mockToken}&type=recovery&email=${encodeURIComponent(email)}`;
+        
+        console.log('\n🔐 ═══════════════════════════════════════════════════════');
+        console.log('💌 PASSWORD RESET LINK (Development Mode)');
+        console.log('═══════════════════════════════════════════════════════');
+        console.log('📧 Email:', email);
+        console.log('🔗 Reset Link:', resetLink);
+        console.log('⏰ Generated at:', new Date().toLocaleString());
+        console.log('💡 Note: Email stored in localStorage for password update');
+        console.log('═══════════════════════════════════════════════════════\n');
+        
+        toast.success('Password reset link generated! Check browser console.');
+        return true;
+      }
+
+      // 🌐 PRODUCTION MODE: Send actual email via Supabase
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`
       });
 
       if (error) {
-        toast.error(error.message);
+        // Check if it's a rate limit error
+        if (error.message.includes('429') || error.message.toLowerCase().includes('rate limit')) {
+          toast.error('Too many requests. Please wait a few minutes and try again.');
+          console.log('⚠️ Supabase Rate Limit: Wait 60 seconds before trying again');
+        } else {
+          toast.error(error.message);
+        }
         return false;
       }
-      toast.success('Password reset email sent!');
+      
+      console.log('✅ Password reset email sent successfully!');
+      console.log('📧 Check your email inbox for the reset link');
+      toast.success('Password reset email sent! Check your inbox.');
       return true;
     } catch (error) {
       console.error('Password reset error:', error);
       toast.error('Failed to send password reset email');
+      return false;
+    }
+  };
+
+  const updateProfile = async (userId: string, updates: Partial<User>): Promise<boolean> => {
+    try {
+      // Prepare updates for database (convert camelCase to snake_case)
+      const dbUpdates: any = {};
+      if (updates.name !== undefined) dbUpdates.name = updates.name;
+      if (updates.studentId !== undefined) dbUpdates.student_id = updates.studentId;
+      if (updates.loyaltyPoints !== undefined) dbUpdates.loyalty_points = updates.loyaltyPoints;
+      
+      // Update in Supabase database
+      const { error } = await supabase
+        .from('users')
+        .update({
+          ...dbUpdates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', userId);
+
+      if (error) {
+        console.error('Profile update error:', error);
+        toast.error('Failed to update profile');
+        return false;
+      }
+
+      // Update local user state
+      if (user && user.id === userId) {
+        setUser({ ...user, ...updates });
+      }
+
+      toast.success('Profile updated successfully! 🎉');
+      return true;
+    } catch (error) {
+      console.error('Update profile error:', error);
+      toast.error('Failed to update profile');
+      return false;
+    }
+  };
+
+  const updatePassword = async (currentPassword: string, newPassword: string): Promise<boolean> => {
+    try {
+      if (!user?.email) {
+        toast.error('No user session found');
+        return false;
+      }
+
+      // Verify current password by attempting to sign in
+      const { error: signInError } = await supabase.auth.signInWithPassword({
+        email: user.email,
+        password: currentPassword
+      });
+
+      if (signInError) {
+        toast.error('Current password is incorrect');
+        return false;
+      }
+
+      // Update to new password
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword
+      });
+
+      if (updateError) {
+        console.error('Password update error:', updateError);
+        toast.error(updateError.message || 'Failed to update password');
+        return false;
+      }
+
+      toast.success('Password updated successfully! 🔐');
+      return true;
+    } catch (error) {
+      console.error('Update password error:', error);
+      toast.error('Failed to update password');
       return false;
     }
   };
@@ -268,6 +417,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       verifyOTP,
       sendOTP,
       resetPassword,
+      updateProfile,
+      updatePassword,
       isLoading
     }}>
       {children}
