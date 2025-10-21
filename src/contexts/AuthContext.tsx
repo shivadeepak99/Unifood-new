@@ -78,21 +78,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     getSession();
 
     // Listen for auth state changes and update the user state
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth state changed:', event);
-      if (event === 'SIGNED_OUT' || !session) {
-        setUser(null);
-      } else if (event === 'SIGNED_IN') {
-        setIsLoading(true);
-        const userData = await fetchUserProfile(session.user.id);
-        if (userData) {
-          setUser(userData);
-          toast.success('Successfully logged in!');
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      (async () => {
+        console.log('Auth state changed:', event);
+        if (event === 'SIGNED_OUT' || !session) {
+          setUser(null);
+          setIsLoading(false);
+        } else if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+          setIsLoading(true);
+          const userData = await fetchUserProfile(session.user.id);
+          if (userData) {
+            setUser(userData);
+            if (event === 'SIGNED_IN') {
+              toast.success('Successfully logged in!');
+            }
+          } else {
+            console.error("Profile not found after auth event. User needs to register a profile.");
+          }
+          setIsLoading(false);
         } else {
-          console.error("Profile not found after SIGNED_IN event. User needs to register a profile.");
+          setIsLoading(false);
         }
-        setIsLoading(false);
-      }
+      })();
     });
 
     return () => {
